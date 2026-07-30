@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Catálogo de Equipamentos</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Biblioteca especializada em leitura geométrica de códigos de barras / QR codes -->
+<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+<style>
+  :root{
+    --bg: #161D26;
+    --panel: #202A38;
+    --panel-2: #26313F;
+    --line: #34404F;
+    --text: #ECEFF3;
+    --muted: #8A97A8;
+    --amber: #F2A340;
+    --amber-dim: #7A5A2A;
+    --green: #4FBF87;
+    --red: #E8654F;
+    --mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+    --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:var(--sans); -webkit-tap-highlight-color: transparent;
+  }
+  body{ min-height:100vh; padding-bottom:110px; }
+
+  header{
+    position:sticky; top:0; z-index:20;
+    background:linear-gradient(180deg, var(--bg) 80%, transparent);
+    padding:18px 18px 10px;
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand .tag{
+    width:34px; height:34px; border-radius:8px;
+    background:var(--amber); color:#1B140A; font-weight:800;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:14px;
+    box-shadow: 0 0 0 3px rgba(242,163,64,0.15);
+  }
+  .brand h1{ font-size:16px; margin:0; letter-spacing:0.2px; }
+  .brand span{ display:block; font-size:11px; color:var(--muted); margin-top:1px; }
+
+  .actions-top{ display:flex; gap:8px; }
+  .icon-btn{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+    width:38px; height:38px; border-radius:10px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; font-weight: bold;
+  }
+  .icon-btn:active{ background:var(--panel); }
+
+  .tabs{
+    display:flex; gap:6px; max-width:520px; margin:0 auto; padding:2px 18px 14px;
+  }
+  .tab{
+    flex:1; text-align:center; padding:11px 8px; border-radius:10px;
+    background:var(--panel); border:1px solid var(--line); color:var(--muted);
+    font-size:13.5px; font-weight:700; letter-spacing:0.2px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; gap:7px;
+  }
+  .tab.active{ background:rgba(242,163,64,0.14); border-color:var(--amber); color:var(--amber); }
+  .tab .n{
+    font-family:var(--mono); font-size:11px; background:var(--panel-2);
+    color:var(--muted); padding:1px 7px; border-radius:20px;
+  }
+  .tab.active .n{ background:rgba(242,163,64,0.2); color:var(--amber); }
+
+  main{ padding:0 18px 0; max-width:520px; margin:0 auto; }
+  .panel{ display:none; }
+  .panel.active{ display:block; }
+
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:18px; margin-bottom:16px; position:relative; overflow:hidden;
+  }
+  .card::before{
+    content:""; position:absolute; left:0; top:0; bottom:0; width:4px;
+    background:var(--amber);
+  }
+
+  .section-label{
+    font-size:11px; text-transform:uppercase; letter-spacing:1.4px;
+    color:var(--muted); margin:0 0 10px 2px; font-weight:600;
+  }
+
+  .field{ margin-bottom:14px; }
+  .field:last-child{ margin-bottom:0; }
+  .field label{
+    display:block; font-size:12.5px; color:var(--muted); margin-bottom:6px; font-weight:500;
+  }
+  .field input, .field select{
+    width:100%; background:var(--panel-2); border:1.5px solid var(--line);
+    color:var(--text); border-radius:10px; padding:13px 14px;
+    font-size:15.5px; font-family:var(--mono); outline:none;
+    transition: border-color .15s ease, background .15s ease;
+    appearance:none; -webkit-appearance:none;
+  }
+  .field select{ font-family:var(--sans); }
+  .field input::placeholder{ color:#5C6779; font-family:var(--sans); }
+  .field input:focus, .field select:focus{
+    border-color:var(--amber); background:#28323F;
+  }
+
+  .input-with-action {
+    display: flex;
+    gap: 8px;
+  }
+  .input-with-action input {
+    flex: 1;
+  }
+  .cam-btn {
+    background: var(--panel-2);
+    border: 1.5px solid var(--line);
+    color: var(--amber);
+    border-radius: 10px;
+    width: 48px;
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .cam-btn:active { background: var(--line); }
+
+  /* Container do Scanner em tempo real */
+  .scanner-container {
+    display: none;
+    margin-top: 12px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+    position: relative;
+  }
+  .scanner-container.active { display: block; }
+  #interactive { width: 100%; height: auto; background: #000; }
+  
+  .scanner-controls {
+    padding: 8px;
+    background: var(--panel-2);
+    display: flex;
+    justify-content: flex-end;
+  }
+  .btn-close-cam {
+    background: var(--red);
+    color: #fff;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+
+  .ocr-suggestions {
+    margin-top: 10px;
+    background: var(--panel-2);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    padding: 12px;
+    display: none;
+  }
+  .ocr-suggestions.active { display: block; }
+  .ocr-suggestions p {
+    margin: 0 0 8px 0;
+    font-size: 11.5px;
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .ocr-chips-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .ocr-chip {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-family: var(--mono);
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ocr-chip:hover, .ocr-chip:active {
+    border-color: var(--amber);
+    color: var(--amber);
+    background: rgba(242,163,64,0.08);
+  }
+
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .type-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .chip{
+    background:var(--panel-2); border:1.5px solid var(--line); border-radius:10px;
+    padding:10px 6px; text-align:center; font-size:12.5px; color:var(--muted);
+    cursor:pointer; user-select:none; font-weight:600; letter-spacing:0.2px;
+  }
+  .chip.active{ background:rgba(242,163,64,0.14); border-color:var(--amber); color:var(--amber); }
+
+  footer.savebar{
+    position:fixed; bottom:0; left:0; right:0; z-index:30;
+    background:linear-gradient(0deg, var(--bg) 60%, transparent);
+    padding:14px 18px 20px;
+  }
+  .savebar-inner{ max-width:520px; margin:0 auto; }
+  .save-btn{
+    width:100%; padding:16px; border:none; border-radius:14px;
+    background:var(--amber); color:#1B140A; font-size:16px; font-weight:800;
+    letter-spacing:0.3px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;
+    box-shadow:0 8px 20px rgba(242,163,64,0.25);
+  }
+  .save-btn:active{ transform:scale(0.98); }
+
+  .toast{
+    position:fixed; top:14px; left:50%; transform:translateX(-50%) translateY(-60px);
+    background:var(--green); color:#0C2B1D; font-weight:700; font-size:13.5px;
+    padding:10px 18px; border-radius:10px; z-index:50; opacity:0;
+    transition: all .25s ease; white-space:nowrap;
+  }
+  .toast.show{ transform:translateX(-50%) translateY(0); opacity:1; }
+  .toast.error{ background:var(--red); color:#2B0C0C; }
+
+  .entry{
+    background:var(--panel); border:1px solid var(--line); border-radius:12px;
+    padding:12px 14px; margin-bottom:8px; display:flex; align-items:center; gap:12px;
+  }
+  .entry .dot{ width:8px; height:8px; border-radius:50%; background:var(--amber); flex-shrink:0; }
+  .entry .info{ flex:1; min-width:0; }
+  .entry .sn{ font-family:var(--mono); font-size:14px; font-weight:700; }
+  .entry .meta{ font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .entry .badge{
+    font-size:10.5px; background:var(--panel-2); color:var(--muted);
+    padding:3px 8px; border-radius:6px; text-transform:uppercase; letter-spacing:0.4px; flex-shrink:0;
+  }
+  .entry .del{
+    color:var(--muted); font-size:16px; cursor:pointer; padding:8px 8px; flex-shrink:0;
+    border-radius:8px; border:1px solid transparent;
+  }
+  .entry .del:active{ color:var(--red); background:rgba(232,101,79,0.1); }
+
+  .empty{ text-align:center; color:var(--muted); font-size:13px; padding:30px 10px; }
+  .clear-link{ text-align:center; margin:18px 0 4px; font-size:12px; color:#4A5566; cursor:pointer; }
+  .clear-link:active{ color:var(--red); }
+
+  .lock-note{
+    display:flex; align-items:center; gap:8px; background:var(--panel-2);
+    border:1px solid var(--line); border-radius:10px; padding:10px 12px;
+    font-size:12px; color:var(--muted); margin-bottom:14px;
+  }
+  .lock-note .ic{ color:var(--amber); font-size:14px; }
+
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(10,14,20,0.7); z-index:60;
+    display:none; align-items:center; justify-content:center; padding:24px;
+  }
+  .modal-overlay.show{ display:flex; }
+  .modal-box{
+    background:var(--panel); border:1px solid var(--line); border-radius:16px;
+    padding:22px; max-width:360px; width:100%;
+  }
+  .modal-box h3{ margin:0 0 8px; font-size:15.5px; }
+  .modal-box p{ margin:0 0 18px; font-size:13.5px; color:var(--muted); line-height:1.5; }
+  .modal-box .sn-preview{
+    font-family:var(--mono); color:var(--text); background:var(--panel-2);
+    padding:8px 10px; border-radius:8px; font-size:13px; margin-bottom:16px;
+  }
+  .modal-actions{ display:flex; gap:10px; }
+  .modal-actions button{
+    flex:1; padding:12px; border-radius:10px; border:1px solid var(--line);
+    font-weight:700; font-size:13.5px; cursor:pointer;
+  }
+  .modal-actions .btn-cancel{ background:var(--panel-2); color:var(--text); }
+  .modal-actions .btn-confirm{ background:var(--red); color:#fff; border-color:var(--red); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="tag">EQ</div>
+    <div>
+      <h1>Catálogo de Equipamentos</h1>
+      <span id="dateNow"></span>
+    </div>
+  </div>
+  <div class="actions-top">
+    <div class="icon-btn" id="importBtn" title="Importar planilha">⇧</div>
+    <div class="icon-btn" id="exportBtn" title="Exportar planilha">⇩</div>
+  </div>
+  <input type="file" id="fileInput" accept=".xlsx, .xls" style="display: none;">
+</header>
+
+<div class="tabs">
+  <div class="tab active" id="tabCadastro" data-tab="cadastro">📝 Cadastrar</div>
+  <div class="tab" id="tabRegistros" data-tab="registros">📋 Registros <span class="n" id="countBadge">0</span></div>
+</div>
+
+<main>
+  <div class="panel active" id="panel-cadastro">
+    <div class="card">
+      <p class="section-label">Identificação</p>
+      <div class="field" id="f-serial">
+        <label>Serial Number (Opcional)</label>
+        <div class="input-with-action">
+          <input type="text" id="serial" placeholder="Ex: SN-8842K91" autocomplete="off">
+          <button type="button" class="cam-btn" id="scanSerialBtn" title="Escanear Código de Barras">📷</button>
+        </div>
+        
+        <!-- Input invisível de fallback para carregar imagem/tirar foto nativa via HTTP -->
+        <input type="file" id="fallbackFileInput" accept="image/*" capture="environment" style="display: none;">
+        
+        <!-- Viewport do Scanner de Código de Barras (Modo Vídeo) -->
+        <div class="scanner-container" id="scannerContainer">
+          <div class="scanner-controls">
+            <button type="button" class="btn-close-cam" id="closeCamBtn">Fechar Câmera</button>
+          </div>
+          <div id="interactive"></div>
+        </div>
+        
+        <!-- Painel de Sugestões Antes de Adicionar -->
+        <div class="ocr-suggestions" id="ocrSuggestions">
+          <p>Código de barras detectado:</p>
+          <div class="ocr-chips-wrapper" id="ocrChipsWrapper"></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="field" id="f-td">
+          <label>TD (Opcional)</label>
+          <div class="input-with-action">
+            <input type="text" id="td" placeholder="Ex: TD-2210" autocomplete="off">
+            <button type="button" class="cam-btn" id="scanTdBtn" title="Escanear Código de Barras">📷</button>
+          </div>
+
+          <input type="file" id="fallbackFileInputTd" accept="image/*" capture="environment" style="display: none;">
+
+          <div class="scanner-container" id="scannerContainerTd">
+            <div class="scanner-controls">
+              <button type="button" class="btn-close-cam" id="closeCamBtnTd">Fechar Câmera</button>
+            </div>
+            <div id="interactive-td"></div>
+          </div>
+
+          <div class="ocr-suggestions" id="ocrSuggestionsTd">
+            <p>Código de barras detectado:</p>
+            <div class="ocr-chips-wrapper" id="ocrChipsWrapperTd"></div>
+          </div>
+        </div>
+        <div class="field" id="f-os">
+          <label>OS (Opcional)</label>
+          <input type="text" id="os" placeholder="Ex: OS-0451" autocomplete="off">
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="section-label">Tipo de equipamento (Opcional)</p>
+      <div class="type-grid" id="tipoGrid">
+        <div class="chip" data-val="Monitor">Monitor</div>
+        <div class="chip" data-val="PC">PC</div>
+        <div class="chip" data-val="Teclado">Teclado</div>
+        <div class="chip" data-val="Mouse">Mouse</div>
+        <div class="chip" data-val="Outros">Outros</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="section-label">Órgão de destino (Opcional)</p>
+      <div class="field select-wrap" id="f-orgao">
+        <select id="orgao">
+          <option value="">Selecione o órgão</option>
+          <option value="OC">OC</option>
+          <option value="CISAM">CISAM</option>
+          <option value="SETUR">SETUR</option>
+          <option value="SEDUH">SEDUH</option>
+          <option value="Pref. Olinda">Pref. Olinda</option>
+          <option value="Geral">Geral</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" id="panel-registros">
+    <div class="lock-note"><span class="ic">🔒</span> Os itens ficam guardados aqui. Para excluir algo é preciso confirmar cada exclusão.</div>
+    <div id="list"></div>
+    <div class="clear-link" id="clearAll">Apagar todos os registros salvos neste aparelho</div>
+  </div>
+</main>
+
+<footer class="savebar" id="savebar">
+  <div class="savebar-inner">
+    <button class="save-btn" id="saveBtn">✓ Salvar equipamento</button>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<!-- Modais de Confirmação -->
+<div class="modal-overlay" id="deleteModal">
+  <div class="modal-box">
+    <h3>Excluir este registro?</h3>
+    <p>Esta ação não pode ser desfeita. Confirme se realmente deseja remover o item abaixo da planilha.</p>
+    <div class="sn-preview" id="deletePreview"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancelDelete">Cancelar</button>
+      <button class="btn-confirm" id="confirmDelete">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="clearModal">
+  <div class="modal-box">
+    <h3>Apagar todos os registros?</h3>
+    <p>Isso vai remover permanentemente <strong id="clearCount">0</strong> item(ns) salvos neste aparelho. Esta ação não pode ser desfeita.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" id="cancelClear">Cancelar</button>
+      <button class="btn-confirm" id="confirmClear">Apagar tudo</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STORAGE_KEY = 'catalogo_equipamentos_v1';
+let tipoSelecionado = null;
+
+const els = {
+  serial: document.getElementById('serial'),
+  td: document.getElementById('td'),
+  os: document.getElementById('os'),
+  orgao: document.getElementById('orgao'),
+  list: document.getElementById('list'),
+  countBadge: document.getElementById('countBadge'),
+  toast: document.getElementById('toast'),
+  dateNow: document.getElementById('dateNow'),
+  fileInput: document.getElementById('fileInput'),
+  importBtn: document.getElementById('importBtn')
+};
+
+// ---- SISTEMA DE LEITURA DE CÓDIGO DE BARRAS (REUTILIZÁVEL POR CAMPO) ----
+// Cria uma instância independente de scanner para cada campo de input que precisar
+// da função de câmera (Serial Number, TD, etc), evitando conflito entre elementos de vídeo.
+function criarLeitorDeCodigoBarras(cfg){
+  const state = {
+    scanner: null,
+    els: {
+      targetInput: document.getElementById(cfg.targetInputId),
+      scanBtn: document.getElementById(cfg.scanBtnId),
+      fallbackFileInput: document.getElementById(cfg.fallbackFileInputId),
+      scannerContainer: document.getElementById(cfg.scannerContainerId),
+      closeCamBtn: document.getElementById(cfg.closeCamBtnId),
+      ocrSuggestions: document.getElementById(cfg.ocrSuggestionsId),
+      ocrChipsWrapper: document.getElementById(cfg.ocrChipsWrapperId)
+    }
+  };
+
+  function processarCodigoDetectado(decodedText){
+    state.els.ocrChipsWrapper.innerHTML = '';
+    const chip = document.createElement('div');
+    chip.className = 'ocr-chip';
+    chip.innerHTML = `📊 <strong>${decodedText}</strong>`;
+
+    chip.addEventListener('click', () => {
+      state.els.targetInput.value = decodedText;
+      showToast('✓ Código aplicado ao campo');
+      state.els.ocrSuggestions.classList.remove('active');
+    });
+
+    state.els.ocrChipsWrapper.appendChild(chip);
+    state.els.ocrSuggestions.classList.add('active');
+    showToast('Código lido! Toque abaixo para aceitar.');
+  }
+
+  function stopScanner(){
+    if (state.scanner && state.scanner.isScanning) {
+      state.scanner.stop().then(() => {
+        state.els.scannerContainer.classList.remove('active');
+      }).catch(err => console.error(err));
+    } else {
+      state.els.scannerContainer.classList.remove('active');
+    }
+  }
+
+  state.els.scanBtn.addEventListener('click', () => {
+    state.els.ocrSuggestions.classList.remove('active');
+    state.els.ocrChipsWrapper.innerHTML = '';
+
+    const isHttpInseguro = window.location.protocol === 'http:' &&
+                           window.location.hostname !== 'localhost' &&
+                           window.location.hostname !== '127.0.0.1';
+
+    if (isHttpInseguro) {
+      showToast('Modo HTTP: Tire uma foto focada da etiqueta');
+      state.els.fallbackFileInput.click();
+      return;
+    }
+
+    state.els.scannerContainer.classList.add('active');
+
+    if (!state.scanner) {
+      state.scanner = new Html5Qrcode(cfg.interactiveDivId);
+    }
+
+    const config = {
+      fps: 15,
+      qrbox: function(width, height) {
+        return { width: Math.floor(width * 0.85), height: Math.floor(height * 0.35) };
+      },
+      aspectRatio: 1.0
+    };
+
+    state.scanner.start(
+      { facingMode: "environment" },
+      config,
+      (decodedText) => {
+        stopScanner();
+        processarCodigoDetectado(decodedText);
+      },
+      (errorMessage) => {}
+    ).catch(err => {
+      console.error(err);
+      stopScanner();
+      showToast('Abrindo captura de imagem protegida...');
+      state.els.fallbackFileInput.click();
+    });
+  });
+
+  state.els.fallbackFileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    showToast('Analisando imagem...', false);
+
+    const html5QrCode = new Html5Qrcode(cfg.interactiveDivId);
+    html5QrCode.scanFile(file, true)
+      .then(decodedText => {
+        processarCodigoDetectado(decodedText);
+      })
+      .catch(err => {
+        console.error(err);
+        showToast('Não foi possível ler o código nesta foto. Tente aproximar mais.', true);
+      });
+
+    state.els.fallbackFileInput.value = '';
+  });
+
+  state.els.closeCamBtn.addEventListener('click', stopScanner);
+
+  return { stopScanner, resetSuggestions: () => {
+    state.els.ocrSuggestions.classList.remove('active');
+    state.els.ocrChipsWrapper.innerHTML = '';
+  }};
+}
+
+const leitorSerial = criarLeitorDeCodigoBarras({
+  targetInputId: 'serial',
+  scanBtnId: 'scanSerialBtn',
+  fallbackFileInputId: 'fallbackFileInput',
+  scannerContainerId: 'scannerContainer',
+  interactiveDivId: 'interactive',
+  closeCamBtnId: 'closeCamBtn',
+  ocrSuggestionsId: 'ocrSuggestions',
+  ocrChipsWrapperId: 'ocrChipsWrapper'
+});
+
+const leitorTd = criarLeitorDeCodigoBarras({
+  targetInputId: 'td',
+  scanBtnId: 'scanTdBtn',
+  fallbackFileInputId: 'fallbackFileInputTd',
+  scannerContainerId: 'scannerContainerTd',
+  interactiveDivId: 'interactive-td',
+  closeCamBtnId: 'closeCamBtnTd',
+  ocrSuggestionsId: 'ocrSuggestionsTd',
+  ocrChipsWrapperId: 'ocrChipsWrapperTd'
+});
+
+function stopScanner(){
+  leitorSerial.stopScanner();
+  leitorTd.stopScanner();
+}
+// ------------------------------------------------------------
+
+function loadData(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return []; }
+}
+function saveData(data){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+function updateDate(){
+  const d = new Date();
+  els.dateNow.textContent = d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'numeric' });
+}
+updateDate();
+
+document.querySelectorAll('.chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    if (chip.classList.contains('active')) {
+      chip.classList.remove('active');
+      tipoSelecionado = null;
+    } else {
+      document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+      chip.classList.add('active');
+      tipoSelecionado = chip.dataset.val;
+    }
+  });
+});
+
+function showToast(msg, isError){
+  els.toast.textContent = msg;
+  els.toast.className = 'toast show' + (isError ? ' error' : '');
+  setTimeout(()=>{ els.toast.className = 'toast'; }, 2200);
+}
+
+function resetForm(){
+  els.serial.value = '';
+  els.td.value = '';
+  els.os.value = '';
+  els.orgao.value = '';
+  tipoSelecionado = null;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  leitorSerial.resetSuggestions();
+  leitorTd.resetSuggestions();
+  els.serial.focus();
+}
+
+function render(){
+  const data = loadData();
+  els.countBadge.textContent = data.length;
+  if(data.length === 0){
+    els.list.innerHTML = '<div class="empty">Nenhum equipamento registrado ainda.</div>';
+    return;
+  }
+  els.list.innerHTML = data.slice().reverse().map(item=>`
+    <div class="entry" data-id="${item.id}">
+      <div class="dot"></div>
+      <div class="info">
+        <div class="sn">${escapeHtml(item.serial)}</div>
+        <div class="meta">TD ${escapeHtml(item.td)} · OS ${escapeHtml(item.os)} · ${escapeHtml(item.orgao)}</div>
+      </div>
+      <div class="badge">${escapeHtml(item.tipo)}</div>
+      <div class="del" data-id="${item.id}">🗑</div>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('.del').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      const id = e.currentTarget.dataset.id;
+      const data = loadData();
+      const item = data.find(d=>String(d.id) === String(id));
+      if(item) pedirExclusao(item);
+    });
+  });
+}
+
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+document.getElementById('saveBtn').addEventListener('click', ()=>{
+  const serial = els.serial.value.trim() || "-";
+  const td = els.td.value.trim() || "-";
+  const os = els.os.value.trim() || "-";
+  const orgao = els.orgao.value || "-";
+  const tipo = tipoSelecionado || "-";
+
+  const data = loadData();
+  data.push({
+    id: Date.now(),
+    serial, td, os,
+    tipo,
+    orgao,
+    dataRegistro: new Date().toLocaleString('pt-BR')
+  });
+  saveData(data);
+  render();
+  showToast('✓ Equipamento salvo');
+  resetForm();
+});
+
+els.importBtn.addEventListener('click', () => els.fileInput.click());
+
+els.fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    try {
+      const dataBytes = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(dataBytes, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet);
+
+      if (rows.length === 0) {
+        showToast('A planilha importada está vazia', true);
+        return;
+      }
+
+      const currentData = loadData();
+      let importedCount = 0;
+
+      rows.forEach((row, index) => {
+        const serial = row['Serial Number'] || row['serial'] || row['Serial'] || "-";
+        const td = row['TD'] || row['td'] || "-";
+        const os = row['OS'] || row['os'] || "-";
+        const tipo = row['Tipo'] || row['tipo'] || "-";
+        const orgao = row['Órgão'] || row['orgao'] || row['Orgão'] || row['Orgao'] || "-";
+        const dataRegistro = row['Data do Registro'] || row['data'] || new Date().toLocaleString('pt-BR');
+
+        currentData.push({
+          id: Date.now() + index,
+          serial: String(serial).trim(),
+          td: String(td).trim(),
+          os: String(os).trim(),
+          tipo: String(tipo).trim(),
+          orgao: String(orgao).trim(),
+          dataRegistro: String(dataRegistro).trim()
+        });
+        importedCount++;
+      });
+
+      saveData(currentData);
+      render();
+      showToast(`✓ ${importedCount} itens adicionados!`);
+    } catch (err) {
+      console.error(err);
+      showToast('Erro ao ler arquivo .xlsx', true);
+    }
+    els.fileInput.value = '';
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+const tabs = document.querySelectorAll('.tab');
+const panels = document.querySelectorAll('.panel');
+const savebar = document.getElementById('savebar');
+
+function goToTab(name){
+  tabs.forEach(t=>t.classList.toggle('active', t.dataset.tab === name));
+  panels.forEach(p=>p.classList.toggle('active', p.id === 'panel-' + name));
+  savebar.style.display = (name === 'cadastro') ? 'block' : 'none';
+  if(name !== 'cadastro') stopScanner();
+}
+tabs.forEach(t=>{
+  t.addEventListener('click', ()=> goToTab(t.dataset.tab));
+});
+
+let idPendenteExclusao = null;
+const deleteModal = document.getElementById('deleteModal');
+const deletePreview = document.getElementById('deletePreview');
+
+function pedirExclusao(item){
+  idPendenteExclusao = item.id;
+  deletePreview.textContent = `${item.serial}  ·  TD ${item.td}  ·  OS ${item.os}`;
+  deleteModal.classList.add('show');
+}
+document.getElementById('cancelDelete').addEventListener('click', ()=>{
+  idPendenteExclusao = null;
+  deleteModal.classList.remove('show');
+});
+document.getElementById('confirmDelete').addEventListener('click', ()=>{
+  if(idPendenteExclusao !== null){
+    let data = loadData();
+    data = data.filter(d=>String(d.id) !== String(idPendenteExclusao));
+    saveData(data);
+    render();
+    showToast('Registro removido');
+  }
+  idPendenteExclusao = null;
+  deleteModal.classList.remove('show');
+});
+
+const clearModal = document.getElementById('clearModal');
+document.getElementById('clearAll').addEventListener('click', ()=>{
+  const data = loadData();
+  if(data.length === 0){
+    showToast('Não há registros para apagar', true);
+    return;
+  }
+  document.getElementById('clearCount').textContent = data.length;
+  clearModal.classList.add('show');
+});
+document.getElementById('cancelClear').addEventListener('click', ()=>{
+  clearModal.classList.remove('show');
+});
+document.getElementById('confirmClear').addEventListener('click', ()=>{
+  localStorage.removeItem(STORAGE_KEY);
+  render();
+  clearModal.classList.remove('show');
+  showToast('Todos os registros foram apagados');
+});
+
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const data = loadData();
+  if(data.length === 0){
+    showToast('Nenhum registro para exportar', true);
+    return;
+  }
+  const rows = data.map(item=>({
+    'Serial Number': item.serial,
+    'TD': item.td,
+    'OS': item.os,
+    'Tipo': item.tipo,
+    'Órgão': item.orgao,
+    'Data do Registro': item.dataRegistro
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:18},{wch:14},{wch:14},{wch:12},{wch:14},{wch:20}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Equipamentos');
+  const fileName = `catalogo_equipamentos_${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  showToast('Planilha exportada');
+});
+
+render();
+</script>
+</body>
+</html>
