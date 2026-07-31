@@ -351,7 +351,7 @@
     <div class="tag">EQ</div>
     <div>
       <h1>Catálogo de Equipamentos</h1>
-      <span id="dateNow"></span>
+      <span id="dateNow"></span> · <span id="syncStatus">conectando…</span>
     </div>
   </div>
   <div class="actions-top">
@@ -500,7 +500,30 @@
   </div>
 </div>
 
-<script>
+<script type="module">
+// ==================================================================
+// FIREBASE: banco de dados compartilhado (todo mundo vê os mesmos registros)
+// ==================================================================
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.0/firebase-app.js";
+import {
+  getFirestore, collection, doc, getDoc, setDoc, deleteDoc, onSnapshot, runTransaction
+} from "https://www.gstatic.com/firebasejs/12.17.0/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDmwi6s0-GTzZ-x31ly6jjwe0d3XfRxMyE",
+  authDomain: "leitor-codigo-4b969.firebaseapp.com",
+  projectId: "leitor-codigo-4b969",
+  storageBucket: "leitor-codigo-4b969.firebasestorage.app",
+  messagingSenderId: "1069621129203",
+  appId: "1:1069621129203:web:0a7bd0041856ae63b4ec86"
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+const planilhasCol = collection(db, 'planilhas');
+
+const els_syncStatus = document.getElementById('syncStatus');
+
 const STORAGE_KEY = 'catalogo_equipamentos_v1';
 let tipoSelecionado = null;
 
@@ -675,7 +698,9 @@ function stopScanner(){
 // ------------------------------------------------------------
 
 // ==================================================================
-// ARMAZENAMENTO: uma "planilha" por dia. Nada de dias anteriores é apagado.
+// ARMAZENAMENTO: uma "planilha" por dia, guardada no Firestore (nuvem compartilhada).
+// storeCache é sempre mantido em sincronia automática via onSnapshot — qualquer
+// pessoa que registrar algo aparece aqui pra todo mundo, sem precisar atualizar a página.
 // ==================================================================
 function chaveHoje(){
   const d = new Date();
@@ -685,45 +710,88 @@ function rotuloData(chave){
   const [y,m,d] = chave.split('-');
   return `${d}/${m}/${y}`;
 }
-
-function loadStore(){
-  let raw;
-  try{ raw = JSON.parse(localStorage.getItem(STORAGE_KEY)); }catch(e){ raw = null; }
-
-  if(!raw){ return { planilhas: [] }; }
-
-  // Migração automática do formato antigo (lista simples de itens, sem planilhas)
-  if(Array.isArray(raw)){
-    if(raw.length === 0) return { planilhas: [] };
-    const migrada = {
-      id: Date.now(),
-      chave: chaveHoje(),
-      titulo: 'Coleta ' + rotuloData(chaveHoje()) + ' (migrada)',
-      criadaEm: new Date().toLocaleString('pt-BR'),
-      itens: raw
-    };
-    const novo = { planilhas: [migrada] };
-    saveStore(novo);
-    return novo;
-  }
-
-  if(!raw.planilhas) raw.planilhas = [];
-  return raw;
-}
-function saveStore(store){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+function gerarIdItem(){
+  return Date.now() + '-' + Math.random().toString(36).slice(2,8);
 }
 
-// Retorna a planilha do dia atual. Só CRIA uma nova planilha se `criar` for true —
-// isso garante que abrir o app não gera planilhas vazias, só o primeiro salvamento do dia.
-function getPlanilhaHoje(store, criar){
+let storeCache = { planilhas: [] };
+let primeiraSincronizacaoFeita = false;
+
+onSnapshot(planilhasCol, (snapshot)=>{
+  storeCache.planilhas = snapshot.docs.map(d => ({ id: d.id, chave: d.id, ...d.data() }));
+  primeiraSincronizacaoFeita = true;
+  els_syncStatus.textContent = '🟢 sincronizado';
+  renderTudo();
+}, (err)=>{
+  console.error(err);
+  els_syncStatus.textContent = '🔴 sem conexão com o banco';
+  showToast('Não foi possível conectar ao banco compartilhado', true);
+});
+
+// Leitura local (sempre a partir do cache já sincronizado)
+function getPlanilhaHoje(criar){
   const chave = chaveHoje();
-  let p = store.planilhas.find(p => p.chave === chave);
-  if(!p && criar){
-    p = { id: Date.now(), chave, titulo: 'Coleta ' + rotuloData(chave), criadaEm: new Date().toLocaleString('pt-BR'), itens: [] };
-    store.planilhas.push(p);
-  }
-  return p;
+  return storeCache.planilhas.find(p => p.chave === chave) || (criar ? { id: chave, chave, titulo: 'Coleta ' + rotuloData(chave), criadaEm: new Date().toLocaleString('pt-BR'), itens: [] } : null);
+}
+
+// ---- Escritas no Firestore (todas via transação, seguras mesmo com várias pessoas mexendo ao mesmo tempo) ----
+async function salvarNovoItem(item){
+  const chave = chaveHoje();
+  const ref = doc(db, 'planilhas', chave);
+  await runTransaction(db, async (tx)=>{
+    const snap = await tx.get(ref);
+    if(!snap.exists()){
+      tx.set(ref, { titulo: 'Coleta ' + rotuloData(chave), criadaEm: new Date().toLocaleString('pt-BR'), itens: [item] });
+    } else {
+      const itens = (snap.data().itens || []).concat([item]);
+      tx.update(ref, { itens });
+    }
+  });
+}
+async function atualizarItem(planilhaId, itemId, novosDados){
+  const ref = doc(db, 'planilhas', planilhaId);
+  await runTransaction(db, async (tx)=>{
+    const snap = await tx.get(ref);
+    if(!snap.exists()) return;
+    const itens = (snap.data().itens || []).map(i => String(i.id) === String(itemId) ? { ...i, ...novosDados } : i);
+    tx.update(ref, { itens });
+  });
+}
+async function excluirItem(planilhaId, itemId){
+  const ref = doc(db, 'planilhas', planilhaId);
+  await runTransaction(db, async (tx)=>{
+    const snap = await tx.get(ref);
+    if(!snap.exists()) return;
+    const itens = (snap.data().itens || []).filter(i => String(i.id) !== String(itemId));
+    tx.update(ref, { itens });
+  });
+}
+async function excluirPlanilhaRemota(planilhaId){
+  await deleteDoc(doc(db, 'planilhas', planilhaId));
+}
+async function limparItensDePlanilha(planilhaId){
+  const ref = doc(db, 'planilhas', planilhaId);
+  await runTransaction(db, async (tx)=>{
+    const snap = await tx.get(ref);
+    if(!snap.exists()) return;
+    tx.update(ref, { itens: [] });
+  });
+}
+async function apagarTodasAsPlanilhas(){
+  await Promise.all(storeCache.planilhas.map(p => deleteDoc(doc(db, 'planilhas', p.id))));
+}
+async function importarItensParaHoje(itensNovos){
+  const chave = chaveHoje();
+  const ref = doc(db, 'planilhas', chave);
+  await runTransaction(db, async (tx)=>{
+    const snap = await tx.get(ref);
+    if(!snap.exists()){
+      tx.set(ref, { titulo: 'Coleta ' + rotuloData(chave), criadaEm: new Date().toLocaleString('pt-BR'), itens: itensNovos });
+    } else {
+      const itens = (snap.data().itens || []).concat(itensNovos);
+      tx.update(ref, { itens });
+    }
+  });
 }
 
 function updateDate(){
@@ -819,8 +887,7 @@ function ligarBotoesDaLista(containerEl){
     btn.addEventListener('click', (e)=>{
       const id = e.currentTarget.dataset.id;
       const planilhaId = e.currentTarget.dataset.planilha;
-      const store = loadStore();
-      const planilha = store.planilhas.find(p=>String(p.id) === String(planilhaId));
+      const planilha = storeCache.planilhas.find(p=>String(p.id) === String(planilhaId));
       const item = planilha && planilha.itens.find(i=>String(i.id) === String(id));
       if(item) entrarModoEdicao(item, planilha.id);
     });
@@ -829,8 +896,7 @@ function ligarBotoesDaLista(containerEl){
     btn.addEventListener('click', (e)=>{
       const id = e.currentTarget.dataset.id;
       const planilhaId = e.currentTarget.dataset.planilha;
-      const store = loadStore();
-      const planilha = store.planilhas.find(p=>String(p.id) === String(planilhaId));
+      const planilha = storeCache.planilhas.find(p=>String(p.id) === String(planilhaId));
       const item = planilha && planilha.itens.find(i=>String(i.id) === String(id));
       if(item) pedirExclusaoItem(item, planilha.id);
     });
@@ -839,8 +905,7 @@ function ligarBotoesDaLista(containerEl){
 
 // ---- Aba "Hoje" (Registros) ----
 function render(){
-  const store = loadStore();
-  const planilha = getPlanilhaHoje(store, false);
+  const planilha = getPlanilhaHoje(false);
   const itens = planilha ? planilha.itens : [];
 
   els.countBadge.textContent = itens.length;
@@ -857,9 +922,8 @@ function render(){
 let planilhaExpandidaId = null;
 
 function renderPlanilhas(){
-  const store = loadStore();
   const hoje = chaveHoje();
-  const planilhas = store.planilhas.slice().sort((a,b)=> b.chave.localeCompare(a.chave));
+  const planilhas = storeCache.planilhas.slice().sort((a,b)=> b.chave.localeCompare(a.chave));
 
   if(planilhas.length === 0){
     els.planilhasList.innerHTML = '<div class="empty">Nenhuma planilha criada ainda. Assim que você salvar o primeiro equipamento do dia, a planilha de hoje será criada automaticamente.</div>';
@@ -931,8 +995,7 @@ function renderPlanilhas(){
   els.planilhasList.querySelectorAll('.ph-del').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
       e.stopPropagation();
-      const store = loadStore();
-      const p = store.planilhas.find(p=>String(p.id) === String(btn.dataset.planilha));
+      const p = storeCache.planilhas.find(p=>String(p.id) === String(btn.dataset.planilha));
       if(p) pedirExclusaoPlanilha(p);
     });
   });
@@ -946,40 +1009,38 @@ function renderTudo(){
 }
 
 // ---- Salvar / Atualizar equipamento ----
-els.saveBtn.addEventListener('click', ()=>{
+els.saveBtn.addEventListener('click', async ()=>{
   const serial = els.serial.value.trim() || "-";
   const td = els.td.value.trim() || "-";
   const os = els.os.value.trim() || "-";
   const orgao = els.orgao.value || "-";
   const tipo = tipoSelecionado || "-";
 
-  const store = loadStore();
+  els.saveBtn.disabled = true;
 
-  if(editando){
-    const planilha = store.planilhas.find(p=>String(p.id) === String(editando.planilhaId));
-    const item = planilha && planilha.itens.find(i=>String(i.id) === String(editando.itemId));
-    if(item){
-      item.serial = serial; item.td = td; item.os = os; item.orgao = orgao; item.tipo = tipo;
-      item.dataEdicao = new Date().toLocaleString('pt-BR');
-      saveStore(store);
+  try{
+    if(editando){
+      await atualizarItem(editando.planilhaId, editando.itemId, {
+        serial, td, os, tipo, orgao,
+        dataEdicao: new Date().toLocaleString('pt-BR')
+      });
       showToast('✓ Equipamento atualizado');
+      sairModoEdicao();
     } else {
-      showToast('Não foi possível localizar o item para atualizar', true);
+      await salvarNovoItem({
+        id: gerarIdItem(),
+        serial, td, os, tipo, orgao,
+        dataRegistro: new Date().toLocaleString('pt-BR')
+      });
+      showToast('✓ Equipamento salvo');
     }
-    sairModoEdicao();
-  } else {
-    const planilha = getPlanilhaHoje(store, true);
-    planilha.itens.push({
-      id: Date.now(),
-      serial, td, os, tipo, orgao,
-      dataRegistro: new Date().toLocaleString('pt-BR')
-    });
-    saveStore(store);
-    showToast('✓ Equipamento salvo');
+    resetForm();
+  }catch(err){
+    console.error(err);
+    showToast('Erro ao salvar no banco compartilhado. Verifique sua internet.', true);
+  }finally{
+    els.saveBtn.disabled = false;
   }
-
-  renderTudo();
-  resetForm();
 });
 
 els.importBtn.addEventListener('click', () => els.fileInput.click());
@@ -989,7 +1050,7 @@ els.fileInput.addEventListener('change', (e) => {
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = function(evt) {
+  reader.onload = async function(evt) {
     try {
       const dataBytes = new Uint8Array(evt.target.result);
       const workbook = XLSX.read(dataBytes, { type: 'array' });
@@ -1002,11 +1063,7 @@ els.fileInput.addEventListener('change', (e) => {
         return;
       }
 
-      const store = loadStore();
-      const planilha = getPlanilhaHoje(store, true);
-      let importedCount = 0;
-
-      rows.forEach((row, index) => {
+      const itensNovos = rows.map((row) => {
         const serial = row['Serial Number'] || row['serial'] || row['Serial'] || "-";
         const td = row['TD'] || row['td'] || "-";
         const os = row['OS'] || row['os'] || "-";
@@ -1014,24 +1071,22 @@ els.fileInput.addEventListener('change', (e) => {
         const orgao = row['Órgão'] || row['orgao'] || row['Orgão'] || row['Orgao'] || "-";
         const dataRegistro = row['Data do Registro'] || row['data'] || new Date().toLocaleString('pt-BR');
 
-        planilha.itens.push({
-          id: Date.now() + index,
+        return {
+          id: gerarIdItem(),
           serial: String(serial).trim(),
           td: String(td).trim(),
           os: String(os).trim(),
           tipo: String(tipo).trim(),
           orgao: String(orgao).trim(),
           dataRegistro: String(dataRegistro).trim()
-        });
-        importedCount++;
+        };
       });
 
-      saveStore(store);
-      renderTudo();
-      showToast(`✓ ${importedCount} itens adicionados à planilha de hoje!`);
+      await importarItensParaHoje(itensNovos);
+      showToast(`✓ ${itensNovos.length} itens adicionados à planilha de hoje!`);
     } catch (err) {
       console.error(err);
-      showToast('Erro ao ler arquivo .xlsx', true);
+      showToast('Erro ao ler/gravar arquivo .xlsx', true);
     }
     els.fileInput.value = '';
   };
@@ -1078,23 +1133,21 @@ document.getElementById('cancelDelete').addEventListener('click', ()=>{
   pendenteExclusao = null;
   deleteModal.classList.remove('show');
 });
-document.getElementById('confirmDelete').addEventListener('click', ()=>{
+document.getElementById('confirmDelete').addEventListener('click', async ()=>{
   if(pendenteExclusao){
-    const store = loadStore();
-    if(pendenteExclusao.tipo === 'item'){
-      const planilha = store.planilhas.find(p=>String(p.id) === String(pendenteExclusao.planilhaId));
-      if(planilha){
-        planilha.itens = planilha.itens.filter(i=>String(i.id) !== String(pendenteExclusao.itemId));
-        saveStore(store);
+    try{
+      if(pendenteExclusao.tipo === 'item'){
+        await excluirItem(pendenteExclusao.planilhaId, pendenteExclusao.itemId);
         showToast('Registro removido');
+      } else if(pendenteExclusao.tipo === 'planilha'){
+        await excluirPlanilhaRemota(pendenteExclusao.planilhaId);
+        planilhaExpandidaId = null;
+        showToast('Planilha excluída');
       }
-    } else if(pendenteExclusao.tipo === 'planilha'){
-      store.planilhas = store.planilhas.filter(p=>String(p.id) !== String(pendenteExclusao.planilhaId));
-      saveStore(store);
-      planilhaExpandidaId = null;
-      showToast('Planilha excluída');
+    }catch(err){
+      console.error(err);
+      showToast('Erro ao excluir no banco compartilhado', true);
     }
-    renderTudo();
   }
   pendenteExclusao = null;
   deleteModal.classList.remove('show');
@@ -1107,8 +1160,7 @@ const clearModalTitle = document.getElementById('clearModalTitle');
 const clearModalText = document.getElementById('clearModalText');
 
 document.getElementById('clearAll').addEventListener('click', ()=>{
-  const store = loadStore();
-  const planilha = getPlanilhaHoje(store, false);
+  const planilha = getPlanilhaHoje(false);
   const qtd = planilha ? planilha.itens.length : 0;
   if(qtd === 0){
     showToast('Não há itens de hoje para apagar', true);
@@ -1121,8 +1173,7 @@ document.getElementById('clearAll').addEventListener('click', ()=>{
 });
 
 document.getElementById('clearAllPlanilhas').addEventListener('click', ()=>{
-  const store = loadStore();
-  const totalPlanilhas = store.planilhas.length;
+  const totalPlanilhas = storeCache.planilhas.length;
   if(totalPlanilhas === 0){
     showToast('Não há planilhas para apagar', true);
     return;
@@ -1136,18 +1187,21 @@ document.getElementById('clearAllPlanilhas').addEventListener('click', ()=>{
 document.getElementById('cancelClear').addEventListener('click', ()=>{
   clearModal.classList.remove('show');
 });
-document.getElementById('confirmClear').addEventListener('click', ()=>{
-  const store = loadStore();
-  if(modoLimpeza === 'hoje'){
-    const planilha = getPlanilhaHoje(store, false);
-    if(planilha){ planilha.itens = []; saveStore(store); }
-    showToast('Itens de hoje apagados');
-  } else {
-    saveStore({ planilhas: [] });
-    planilhaExpandidaId = null;
-    showToast('Todas as planilhas foram apagadas');
+document.getElementById('confirmClear').addEventListener('click', async ()=>{
+  try{
+    if(modoLimpeza === 'hoje'){
+      const planilha = getPlanilhaHoje(false);
+      if(planilha) await limparItensDePlanilha(planilha.id);
+      showToast('Itens de hoje apagados');
+    } else {
+      await apagarTodasAsPlanilhas();
+      planilhaExpandidaId = null;
+      showToast('Todas as planilhas foram apagadas');
+    }
+  }catch(err){
+    console.error(err);
+    showToast('Erro ao apagar no banco compartilhado', true);
   }
-  renderTudo();
   clearModal.classList.remove('show');
 });
 
@@ -1164,8 +1218,7 @@ function planilhaParaLinhas(p){
 }
 
 function exportarPlanilhaPorId(planilhaId){
-  const store = loadStore();
-  const p = store.planilhas.find(p=>String(p.id) === String(planilhaId));
+  const p = storeCache.planilhas.find(p=>String(p.id) === String(planilhaId));
   if(!p || p.itens.length === 0){
     showToast('Esta planilha não tem itens para exportar', true);
     return;
@@ -1180,8 +1233,7 @@ function exportarPlanilhaPorId(planilhaId){
 
 // Exporta TODAS as planilhas, cada uma em uma aba separada dentro do mesmo arquivo Excel
 document.getElementById('exportBtn').addEventListener('click', ()=>{
-  const store = loadStore();
-  const planilhasComItens = store.planilhas.filter(p=>p.itens.length > 0);
+  const planilhasComItens = storeCache.planilhas.filter(p=>p.itens.length > 0);
   if(planilhasComItens.length === 0){
     showToast('Nenhum registro para exportar', true);
     return;
