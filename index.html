@@ -282,6 +282,66 @@
   }
   .modal-actions .btn-cancel{ background:var(--panel-2); color:var(--text); }
   .modal-actions .btn-confirm{ background:var(--red); color:#fff; border-color:var(--red); }
+
+  .entry .edit{
+    color:var(--muted); font-size:15px; cursor:pointer; padding:8px 8px; flex-shrink:0;
+    border-radius:8px; border:1px solid transparent;
+  }
+  .entry .edit:active{ color:var(--amber); background:rgba(242,163,64,0.1); }
+
+  .edit-banner{
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:rgba(242,163,64,0.12); border:1px solid var(--amber);
+    border-radius:12px; padding:12px 14px; margin-bottom:16px; font-size:13px;
+  }
+  .edit-banner span{ color:var(--amber); font-weight:700; }
+  .edit-banner .cancel-edit{
+    color:var(--muted); text-decoration:underline; cursor:pointer; font-size:12.5px; flex-shrink:0;
+  }
+
+  .planilha-card{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:14px 16px; margin-bottom:10px; cursor:pointer;
+  }
+  .planilha-card.today{ border-color:var(--amber); }
+  .planilha-card .ph-top{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .planilha-card .ph-title{ font-weight:700; font-size:14.5px; display:flex; align-items:center; gap:6px; }
+  .planilha-card .ph-title .today-tag{
+    font-size:9.5px; background:var(--amber); color:#1B140A; padding:2px 6px; border-radius:5px;
+    text-transform:uppercase; font-weight:800; letter-spacing:0.4px;
+  }
+  .planilha-card .ph-meta{ font-size:11.5px; color:var(--muted); margin-top:4px; }
+  .planilha-card .ph-actions{ display:flex; align-items:center; gap:4px; flex-shrink:0; }
+  .planilha-card .ph-actions .icon-btn{ width:32px; height:32px; font-size:14px; }
+  .planilha-card .ph-actions .ph-del{ color:var(--muted); }
+  .planilha-card .ph-actions .ph-del:active{ color:var(--red); }
+  .planilha-card .ph-chevron{ color:var(--muted); font-size:13px; transition:transform .15s ease; }
+  .planilha-card.expanded .ph-chevron{ transform:rotate(180deg); }
+
+  .planilha-preview{ display:none; margin-top:12px; }
+  .planilha-card.expanded .planilha-preview{ display:block; }
+
+  .table-scroll{
+    overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--panel-2);
+  }
+  table.preview-table{
+    width:100%; border-collapse:collapse; font-size:12px; white-space:nowrap;
+  }
+  table.preview-table th{
+    text-align:left; padding:9px 10px; font-size:10.5px; text-transform:uppercase;
+    letter-spacing:0.4px; color:var(--muted); border-bottom:1px solid var(--line); font-weight:700;
+  }
+  table.preview-table td{
+    padding:9px 10px; border-bottom:1px solid var(--line); font-family:var(--mono); color:var(--text);
+  }
+  table.preview-table tr:last-child td{ border-bottom:none; }
+  table.preview-table td.actions-cell{ display:flex; gap:4px; }
+  table.preview-table .mini-btn{
+    background:var(--panel); border:1px solid var(--line); border-radius:6px;
+    width:26px; height:26px; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; font-size:12px; flex-shrink:0;
+  }
+  .planilha-empty{ font-size:12px; color:var(--muted); padding:14px; text-align:center; }
 </style>
 </head>
 <body>
@@ -303,11 +363,16 @@
 
 <div class="tabs">
   <div class="tab active" id="tabCadastro" data-tab="cadastro">📝 Cadastrar</div>
-  <div class="tab" id="tabRegistros" data-tab="registros">📋 Registros <span class="n" id="countBadge">0</span></div>
+  <div class="tab" id="tabRegistros" data-tab="registros">📋 Hoje <span class="n" id="countBadge">0</span></div>
+  <div class="tab" id="tabPlanilhas" data-tab="planilhas">🗂 Planilhas</div>
 </div>
 
 <main>
   <div class="panel active" id="panel-cadastro">
+    <div class="edit-banner" id="editBanner" style="display:none;">
+      <span>✎ Editando um item já registrado</span>
+      <span class="cancel-edit" id="cancelEditLink">cancelar</span>
+    </div>
     <div class="card">
       <p class="section-label">Identificação</p>
       <div class="field" id="f-serial">
@@ -391,9 +456,15 @@
   </div>
 
   <div class="panel" id="panel-registros">
-    <div class="lock-note"><span class="ic">🔒</span> Os itens ficam guardados aqui. Para excluir algo é preciso confirmar cada exclusão.</div>
+    <div class="lock-note"><span class="ic">🔒</span> Itens da coleta de hoje. Para excluir ou editar algo, confirme a ação.</div>
     <div id="list"></div>
-    <div class="clear-link" id="clearAll">Apagar todos os registros salvos neste aparelho</div>
+    <div class="clear-link" id="clearAll">Apagar todos os itens de hoje</div>
+  </div>
+
+  <div class="panel" id="panel-planilhas">
+    <div class="lock-note"><span class="ic">🗂</span> Uma planilha nova é criada a cada dia. As planilhas de dias anteriores continuam guardadas aqui.</div>
+    <div id="planilhasList"></div>
+    <div class="clear-link" id="clearAllPlanilhas">Apagar todas as planilhas salvas neste aparelho</div>
   </div>
 </main>
 
@@ -408,8 +479,8 @@
 <!-- Modais de Confirmação -->
 <div class="modal-overlay" id="deleteModal">
   <div class="modal-box">
-    <h3>Excluir este registro?</h3>
-    <p>Esta ação não pode ser desfeita. Confirme se realmente deseja remover o item abaixo da planilha.</p>
+    <h3 id="deleteModalTitle">Excluir este registro?</h3>
+    <p id="deleteModalText">Esta ação não pode ser desfeita. Confirme se realmente deseja remover o item abaixo da planilha.</p>
     <div class="sn-preview" id="deletePreview"></div>
     <div class="modal-actions">
       <button class="btn-cancel" id="cancelDelete">Cancelar</button>
@@ -420,8 +491,8 @@
 
 <div class="modal-overlay" id="clearModal">
   <div class="modal-box">
-    <h3>Apagar todos os registros?</h3>
-    <p>Isso vai remover permanentemente <strong id="clearCount">0</strong> item(ns) salvos neste aparelho. Esta ação não pode ser desfeita.</p>
+    <h3 id="clearModalTitle">Apagar todos os registros?</h3>
+    <p id="clearModalText">Isso vai remover permanentemente <strong id="clearCount">0</strong> item(ns) salvos neste aparelho. Esta ação não pode ser desfeita.</p>
     <div class="modal-actions">
       <button class="btn-cancel" id="cancelClear">Cancelar</button>
       <button class="btn-confirm" id="confirmClear">Apagar tudo</button>
@@ -443,7 +514,19 @@ const els = {
   toast: document.getElementById('toast'),
   dateNow: document.getElementById('dateNow'),
   fileInput: document.getElementById('fileInput'),
-  importBtn: document.getElementById('importBtn')
+  importBtn: document.getElementById('importBtn'),
+  editBanner: document.getElementById('editBanner'),
+  cancelEditLink: document.getElementById('cancelEditLink'),
+  planilhasList: document.getElementById('planilhasList'),
+  saveBtn: document.getElementById('saveBtn')
+};
+
+// A biblioteca html5-qrcode já escaneia TODOS os formatos (QR, Code128, EAN, UPC, Data Matrix,
+// PDF417, Aztec, Codabar, ITF, RSS etc.) por padrão — não é preciso listar formatos manualmente.
+// Apenas ativamos o leitor nativo do navegador (mais rápido/preciso) quando disponível.
+const OPCOES_LEITOR = {
+  useBarCodeDetectorIfSupported: true,
+  verbose: false
 };
 
 // ---- SISTEMA DE LEITURA DE CÓDIGO DE BARRAS (REUTILIZÁVEL POR CAMPO) ----
@@ -507,13 +590,15 @@ function criarLeitorDeCodigoBarras(cfg){
     state.els.scannerContainer.classList.add('active');
 
     if (!state.scanner) {
-      state.scanner = new Html5Qrcode(cfg.interactiveDivId);
+      state.scanner = new Html5Qrcode(cfg.interactiveDivId, OPCOES_LEITOR);
     }
 
     const config = {
       fps: 15,
       qrbox: function(width, height) {
-        return { width: Math.floor(width * 0.85), height: Math.floor(height * 0.35) };
+        // Área generosa: quadrada o suficiente para QR/Data Matrix, larga o suficiente para códigos de barras lineares
+        const size = Math.floor(Math.min(width, height) * 0.75);
+        return { width: Math.max(size, Math.floor(width * 0.8)), height: size };
       },
       aspectRatio: 1.0
     };
@@ -540,7 +625,7 @@ function criarLeitorDeCodigoBarras(cfg){
 
     showToast('Analisando imagem...', false);
 
-    const html5QrCode = new Html5Qrcode(cfg.interactiveDivId);
+    const html5QrCode = new Html5Qrcode(cfg.interactiveDivId, OPCOES_LEITOR);
     html5QrCode.scanFile(file, true)
       .then(decodedText => {
         processarCodigoDetectado(decodedText);
@@ -589,14 +674,56 @@ function stopScanner(){
 }
 // ------------------------------------------------------------
 
-function loadData(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  }catch(e){ return []; }
+// ==================================================================
+// ARMAZENAMENTO: uma "planilha" por dia. Nada de dias anteriores é apagado.
+// ==================================================================
+function chaveHoje(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
 }
-function saveData(data){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+function rotuloData(chave){
+  const [y,m,d] = chave.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function loadStore(){
+  let raw;
+  try{ raw = JSON.parse(localStorage.getItem(STORAGE_KEY)); }catch(e){ raw = null; }
+
+  if(!raw){ return { planilhas: [] }; }
+
+  // Migração automática do formato antigo (lista simples de itens, sem planilhas)
+  if(Array.isArray(raw)){
+    if(raw.length === 0) return { planilhas: [] };
+    const migrada = {
+      id: Date.now(),
+      chave: chaveHoje(),
+      titulo: 'Coleta ' + rotuloData(chaveHoje()) + ' (migrada)',
+      criadaEm: new Date().toLocaleString('pt-BR'),
+      itens: raw
+    };
+    const novo = { planilhas: [migrada] };
+    saveStore(novo);
+    return novo;
+  }
+
+  if(!raw.planilhas) raw.planilhas = [];
+  return raw;
+}
+function saveStore(store){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+}
+
+// Retorna a planilha do dia atual. Só CRIA uma nova planilha se `criar` for true —
+// isso garante que abrir o app não gera planilhas vazias, só o primeiro salvamento do dia.
+function getPlanilhaHoje(store, criar){
+  const chave = chaveHoje();
+  let p = store.planilhas.find(p => p.chave === chave);
+  if(!p && criar){
+    p = { id: Date.now(), chave, titulo: 'Coleta ' + rotuloData(chave), criadaEm: new Date().toLocaleString('pt-BR'), itens: [] };
+    store.planilhas.push(p);
+  }
+  return p;
 }
 
 function updateDate(){
@@ -624,6 +751,37 @@ function showToast(msg, isError){
   setTimeout(()=>{ els.toast.className = 'toast'; }, 2200);
 }
 
+// ---- Estado de edição (item existente sendo corrigido) ----
+let editando = null; // { itemId, planilhaId }
+
+function entrarModoEdicao(item, planilhaId){
+  editando = { itemId: item.id, planilhaId };
+  els.serial.value = item.serial === '-' ? '' : item.serial;
+  els.td.value = item.td === '-' ? '' : item.td;
+  els.os.value = item.os === '-' ? '' : item.os;
+  els.orgao.value = item.orgao === '-' ? '' : item.orgao;
+  tipoSelecionado = (item.tipo === '-' ? null : item.tipo);
+  document.querySelectorAll('.chip').forEach(c=>{
+    c.classList.toggle('active', c.dataset.val === tipoSelecionado);
+  });
+  els.editBanner.style.display = 'flex';
+  els.saveBtn.innerHTML = '✎ Atualizar equipamento';
+  goToTab('cadastro');
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+function sairModoEdicao(){
+  editando = null;
+  els.editBanner.style.display = 'none';
+  els.saveBtn.innerHTML = '✓ Salvar equipamento';
+}
+
+els.cancelEditLink.addEventListener('click', ()=>{
+  sairModoEdicao();
+  resetForm();
+  showToast('Edição cancelada');
+});
+
 function resetForm(){
   els.serial.value = '';
   els.td.value = '';
@@ -636,57 +794,191 @@ function resetForm(){
   els.serial.focus();
 }
 
-function render(){
-  const data = loadData();
-  els.countBadge.textContent = data.length;
-  if(data.length === 0){
-    els.list.innerHTML = '<div class="empty">Nenhum equipamento registrado ainda.</div>';
-    return;
-  }
-  els.list.innerHTML = data.slice().reverse().map(item=>`
-    <div class="entry" data-id="${item.id}">
+function escapeHtml(str){
+  return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---- Renderização de uma lista de itens (usada na aba "Hoje" e na pré-visualização de planilhas) ----
+function itensParaHtml(itens, planilhaId){
+  return itens.slice().reverse().map(item=>`
+    <div class="entry" data-id="${item.id}" data-planilha="${planilhaId}">
       <div class="dot"></div>
       <div class="info">
         <div class="sn">${escapeHtml(item.serial)}</div>
         <div class="meta">TD ${escapeHtml(item.td)} · OS ${escapeHtml(item.os)} · ${escapeHtml(item.orgao)}</div>
       </div>
       <div class="badge">${escapeHtml(item.tipo)}</div>
-      <div class="del" data-id="${item.id}">🗑</div>
+      <div class="edit" data-id="${item.id}" data-planilha="${planilhaId}" title="Editar">✎</div>
+      <div class="del" data-id="${item.id}" data-planilha="${planilhaId}" title="Excluir">🗑</div>
     </div>
   `).join('');
+}
 
-  document.querySelectorAll('.del').forEach(btn=>{
+function ligarBotoesDaLista(containerEl){
+  containerEl.querySelectorAll('.edit').forEach(btn=>{
     btn.addEventListener('click', (e)=>{
       const id = e.currentTarget.dataset.id;
-      const data = loadData();
-      const item = data.find(d=>String(d.id) === String(id));
-      if(item) pedirExclusao(item);
+      const planilhaId = e.currentTarget.dataset.planilha;
+      const store = loadStore();
+      const planilha = store.planilhas.find(p=>String(p.id) === String(planilhaId));
+      const item = planilha && planilha.itens.find(i=>String(i.id) === String(id));
+      if(item) entrarModoEdicao(item, planilha.id);
+    });
+  });
+  containerEl.querySelectorAll('.del').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      const id = e.currentTarget.dataset.id;
+      const planilhaId = e.currentTarget.dataset.planilha;
+      const store = loadStore();
+      const planilha = store.planilhas.find(p=>String(p.id) === String(planilhaId));
+      const item = planilha && planilha.itens.find(i=>String(i.id) === String(id));
+      if(item) pedirExclusaoItem(item, planilha.id);
     });
   });
 }
 
-function escapeHtml(str){
-  return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// ---- Aba "Hoje" (Registros) ----
+function render(){
+  const store = loadStore();
+  const planilha = getPlanilhaHoje(store, false);
+  const itens = planilha ? planilha.itens : [];
+
+  els.countBadge.textContent = itens.length;
+
+  if(itens.length === 0){
+    els.list.innerHTML = '<div class="empty">Nenhum equipamento registrado hoje ainda.</div>';
+    return;
+  }
+  els.list.innerHTML = itensParaHtml(itens, planilha.id);
+  ligarBotoesDaLista(els.list);
 }
 
-document.getElementById('saveBtn').addEventListener('click', ()=>{
+// ---- Aba "Planilhas" ----
+let planilhaExpandidaId = null;
+
+function renderPlanilhas(){
+  const store = loadStore();
+  const hoje = chaveHoje();
+  const planilhas = store.planilhas.slice().sort((a,b)=> b.chave.localeCompare(a.chave));
+
+  if(planilhas.length === 0){
+    els.planilhasList.innerHTML = '<div class="empty">Nenhuma planilha criada ainda. Assim que você salvar o primeiro equipamento do dia, a planilha de hoje será criada automaticamente.</div>';
+    return;
+  }
+
+  els.planilhasList.innerHTML = planilhas.map(p=>{
+    const isHoje = p.chave === hoje;
+    const isExpanded = String(p.id) === String(planilhaExpandidaId);
+    return `
+    <div class="planilha-card ${isHoje ? 'today' : ''} ${isExpanded ? 'expanded' : ''}" data-planilha="${p.id}">
+      <div class="ph-top" data-toggle="${p.id}">
+        <div>
+          <div class="ph-title">${escapeHtml(p.titulo)} ${isHoje ? '<span class="today-tag">Hoje</span>' : ''}</div>
+          <div class="ph-meta">${p.itens.length} item(ns) · criada em ${escapeHtml(p.criadaEm)}</div>
+        </div>
+        <div class="ph-actions">
+          <div class="icon-btn ph-export" data-planilha="${p.id}" title="Exportar esta planilha">⇩</div>
+          <div class="icon-btn ph-del" data-planilha="${p.id}" title="Excluir esta planilha">🗑</div>
+          <div class="ph-chevron">⌄</div>
+        </div>
+      </div>
+      <div class="planilha-preview">
+        ${p.itens.length === 0
+          ? '<div class="planilha-empty">Esta planilha ainda não tem itens.</div>'
+          : `<div class="table-scroll"><table class="preview-table">
+              <thead><tr>
+                <th>Serial</th><th>TD</th><th>OS</th><th>Tipo</th><th>Órgão</th><th></th>
+              </tr></thead>
+              <tbody>
+                ${p.itens.slice().reverse().map(item => `
+                  <tr>
+                    <td>${escapeHtml(item.serial)}</td>
+                    <td>${escapeHtml(item.td)}</td>
+                    <td>${escapeHtml(item.os)}</td>
+                    <td>${escapeHtml(item.tipo)}</td>
+                    <td>${escapeHtml(item.orgao)}</td>
+                    <td class="actions-cell">
+                      <div class="mini-btn edit" data-id="${item.id}" data-planilha="${p.id}" title="Editar">✎</div>
+                      <div class="mini-btn del" data-id="${item.id}" data-planilha="${p.id}" title="Excluir">🗑</div>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table></div>`
+        }
+      </div>
+    </div>`;
+  }).join('');
+
+  // Alternar expandir/recolher
+  els.planilhasList.querySelectorAll('[data-toggle]').forEach(top=>{
+    top.addEventListener('click', ()=>{
+      const id = top.dataset.toggle;
+      planilhaExpandidaId = (String(planilhaExpandidaId) === String(id)) ? null : id;
+      renderPlanilhas();
+    });
+  });
+
+  // Exportar planilha individual
+  els.planilhasList.querySelectorAll('.ph-export').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      exportarPlanilhaPorId(btn.dataset.planilha);
+    });
+  });
+
+  // Excluir planilha inteira
+  els.planilhasList.querySelectorAll('.ph-del').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const store = loadStore();
+      const p = store.planilhas.find(p=>String(p.id) === String(btn.dataset.planilha));
+      if(p) pedirExclusaoPlanilha(p);
+    });
+  });
+
+  ligarBotoesDaLista(els.planilhasList);
+}
+
+function renderTudo(){
+  render();
+  renderPlanilhas();
+}
+
+// ---- Salvar / Atualizar equipamento ----
+els.saveBtn.addEventListener('click', ()=>{
   const serial = els.serial.value.trim() || "-";
   const td = els.td.value.trim() || "-";
   const os = els.os.value.trim() || "-";
   const orgao = els.orgao.value || "-";
   const tipo = tipoSelecionado || "-";
 
-  const data = loadData();
-  data.push({
-    id: Date.now(),
-    serial, td, os,
-    tipo,
-    orgao,
-    dataRegistro: new Date().toLocaleString('pt-BR')
-  });
-  saveData(data);
-  render();
-  showToast('✓ Equipamento salvo');
+  const store = loadStore();
+
+  if(editando){
+    const planilha = store.planilhas.find(p=>String(p.id) === String(editando.planilhaId));
+    const item = planilha && planilha.itens.find(i=>String(i.id) === String(editando.itemId));
+    if(item){
+      item.serial = serial; item.td = td; item.os = os; item.orgao = orgao; item.tipo = tipo;
+      item.dataEdicao = new Date().toLocaleString('pt-BR');
+      saveStore(store);
+      showToast('✓ Equipamento atualizado');
+    } else {
+      showToast('Não foi possível localizar o item para atualizar', true);
+    }
+    sairModoEdicao();
+  } else {
+    const planilha = getPlanilhaHoje(store, true);
+    planilha.itens.push({
+      id: Date.now(),
+      serial, td, os, tipo, orgao,
+      dataRegistro: new Date().toLocaleString('pt-BR')
+    });
+    saveStore(store);
+    showToast('✓ Equipamento salvo');
+  }
+
+  renderTudo();
   resetForm();
 });
 
@@ -710,7 +1002,8 @@ els.fileInput.addEventListener('change', (e) => {
         return;
       }
 
-      const currentData = loadData();
+      const store = loadStore();
+      const planilha = getPlanilhaHoje(store, true);
       let importedCount = 0;
 
       rows.forEach((row, index) => {
@@ -721,7 +1014,7 @@ els.fileInput.addEventListener('change', (e) => {
         const orgao = row['Órgão'] || row['orgao'] || row['Orgão'] || row['Orgao'] || "-";
         const dataRegistro = row['Data do Registro'] || row['data'] || new Date().toLocaleString('pt-BR');
 
-        currentData.push({
+        planilha.itens.push({
           id: Date.now() + index,
           serial: String(serial).trim(),
           td: String(td).trim(),
@@ -733,9 +1026,9 @@ els.fileInput.addEventListener('change', (e) => {
         importedCount++;
       });
 
-      saveData(currentData);
-      render();
-      showToast(`✓ ${importedCount} itens adicionados!`);
+      saveStore(store);
+      renderTudo();
+      showToast(`✓ ${importedCount} itens adicionados à planilha de hoje!`);
     } catch (err) {
       console.error(err);
       showToast('Erro ao ler arquivo .xlsx', true);
@@ -754,63 +1047,113 @@ function goToTab(name){
   panels.forEach(p=>p.classList.toggle('active', p.id === 'panel-' + name));
   savebar.style.display = (name === 'cadastro') ? 'block' : 'none';
   if(name !== 'cadastro') stopScanner();
+  if(name === 'planilhas') renderPlanilhas();
 }
 tabs.forEach(t=>{
   t.addEventListener('click', ()=> goToTab(t.dataset.tab));
 });
 
-let idPendenteExclusao = null;
+// ---- Modal genérico de exclusão (item OU planilha inteira) ----
+let pendenteExclusao = null; // { tipo: 'item'|'planilha', planilhaId, itemId }
 const deleteModal = document.getElementById('deleteModal');
 const deletePreview = document.getElementById('deletePreview');
+const deleteModalTitle = document.getElementById('deleteModalTitle');
+const deleteModalText = document.getElementById('deleteModalText');
 
-function pedirExclusao(item){
-  idPendenteExclusao = item.id;
+function pedirExclusaoItem(item, planilhaId){
+  pendenteExclusao = { tipo:'item', planilhaId, itemId: item.id };
+  deleteModalTitle.textContent = 'Excluir este registro?';
+  deleteModalText.textContent = 'Esta ação não pode ser desfeita. Confirme se realmente deseja remover o item abaixo da planilha.';
   deletePreview.textContent = `${item.serial}  ·  TD ${item.td}  ·  OS ${item.os}`;
   deleteModal.classList.add('show');
 }
+function pedirExclusaoPlanilha(planilha){
+  pendenteExclusao = { tipo:'planilha', planilhaId: planilha.id };
+  deleteModalTitle.textContent = 'Excluir esta planilha inteira?';
+  deleteModalText.textContent = 'Todos os itens desta planilha serão apagados permanentemente. Esta ação não pode ser desfeita.';
+  deletePreview.textContent = `${planilha.titulo} · ${planilha.itens.length} item(ns)`;
+  deleteModal.classList.add('show');
+}
 document.getElementById('cancelDelete').addEventListener('click', ()=>{
-  idPendenteExclusao = null;
+  pendenteExclusao = null;
   deleteModal.classList.remove('show');
 });
 document.getElementById('confirmDelete').addEventListener('click', ()=>{
-  if(idPendenteExclusao !== null){
-    let data = loadData();
-    data = data.filter(d=>String(d.id) !== String(idPendenteExclusao));
-    saveData(data);
-    render();
-    showToast('Registro removido');
+  if(pendenteExclusao){
+    const store = loadStore();
+    if(pendenteExclusao.tipo === 'item'){
+      const planilha = store.planilhas.find(p=>String(p.id) === String(pendenteExclusao.planilhaId));
+      if(planilha){
+        planilha.itens = planilha.itens.filter(i=>String(i.id) !== String(pendenteExclusao.itemId));
+        saveStore(store);
+        showToast('Registro removido');
+      }
+    } else if(pendenteExclusao.tipo === 'planilha'){
+      store.planilhas = store.planilhas.filter(p=>String(p.id) !== String(pendenteExclusao.planilhaId));
+      saveStore(store);
+      planilhaExpandidaId = null;
+      showToast('Planilha excluída');
+    }
+    renderTudo();
   }
-  idPendenteExclusao = null;
+  pendenteExclusao = null;
   deleteModal.classList.remove('show');
 });
 
+// ---- Modal genérico de limpeza (itens de hoje OU todas as planilhas) ----
+let modoLimpeza = 'hoje';
 const clearModal = document.getElementById('clearModal');
+const clearModalTitle = document.getElementById('clearModalTitle');
+const clearModalText = document.getElementById('clearModalText');
+
 document.getElementById('clearAll').addEventListener('click', ()=>{
-  const data = loadData();
-  if(data.length === 0){
-    showToast('Não há registros para apagar', true);
+  const store = loadStore();
+  const planilha = getPlanilhaHoje(store, false);
+  const qtd = planilha ? planilha.itens.length : 0;
+  if(qtd === 0){
+    showToast('Não há itens de hoje para apagar', true);
     return;
   }
-  document.getElementById('clearCount').textContent = data.length;
+  modoLimpeza = 'hoje';
+  clearModalTitle.textContent = 'Apagar os itens de hoje?';
+  clearModalText.innerHTML = `Isso vai remover permanentemente <strong>${qtd}</strong> item(ns) da planilha de hoje. As planilhas de outros dias não serão afetadas.`;
   clearModal.classList.add('show');
 });
+
+document.getElementById('clearAllPlanilhas').addEventListener('click', ()=>{
+  const store = loadStore();
+  const totalPlanilhas = store.planilhas.length;
+  if(totalPlanilhas === 0){
+    showToast('Não há planilhas para apagar', true);
+    return;
+  }
+  modoLimpeza = 'tudo';
+  clearModalTitle.textContent = 'Apagar TODAS as planilhas?';
+  clearModalText.innerHTML = `Isso vai remover permanentemente <strong>${totalPlanilhas}</strong> planilha(s) e todos os itens delas, de todos os dias. Esta ação não pode ser desfeita.`;
+  clearModal.classList.add('show');
+});
+
 document.getElementById('cancelClear').addEventListener('click', ()=>{
   clearModal.classList.remove('show');
 });
 document.getElementById('confirmClear').addEventListener('click', ()=>{
-  localStorage.removeItem(STORAGE_KEY);
-  render();
+  const store = loadStore();
+  if(modoLimpeza === 'hoje'){
+    const planilha = getPlanilhaHoje(store, false);
+    if(planilha){ planilha.itens = []; saveStore(store); }
+    showToast('Itens de hoje apagados');
+  } else {
+    saveStore({ planilhas: [] });
+    planilhaExpandidaId = null;
+    showToast('Todas as planilhas foram apagadas');
+  }
+  renderTudo();
   clearModal.classList.remove('show');
-  showToast('Todos os registros foram apagados');
 });
 
-document.getElementById('exportBtn').addEventListener('click', ()=>{
-  const data = loadData();
-  if(data.length === 0){
-    showToast('Nenhum registro para exportar', true);
-    return;
-  }
-  const rows = data.map(item=>({
+// ---- Exportação ----
+function planilhaParaLinhas(p){
+  return p.itens.map(item=>({
     'Serial Number': item.serial,
     'TD': item.td,
     'OS': item.os,
@@ -818,16 +1161,45 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
     'Órgão': item.orgao,
     'Data do Registro': item.dataRegistro
   }));
-  const ws = XLSX.utils.json_to_sheet(rows);
+}
+
+function exportarPlanilhaPorId(planilhaId){
+  const store = loadStore();
+  const p = store.planilhas.find(p=>String(p.id) === String(planilhaId));
+  if(!p || p.itens.length === 0){
+    showToast('Esta planilha não tem itens para exportar', true);
+    return;
+  }
+  const ws = XLSX.utils.json_to_sheet(planilhaParaLinhas(p));
   ws['!cols'] = [{wch:18},{wch:14},{wch:14},{wch:12},{wch:14},{wch:20}];
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Equipamentos');
-  const fileName = `catalogo_equipamentos_${new Date().toISOString().slice(0,10)}.xlsx`;
-  XLSX.writeFile(wb, fileName);
+  XLSX.utils.book_append_sheet(wb, ws, p.chave);
+  XLSX.writeFile(wb, `catalogo_equipamentos_${p.chave}.xlsx`);
   showToast('Planilha exportada');
+}
+
+// Exporta TODAS as planilhas, cada uma em uma aba separada dentro do mesmo arquivo Excel
+document.getElementById('exportBtn').addEventListener('click', ()=>{
+  const store = loadStore();
+  const planilhasComItens = store.planilhas.filter(p=>p.itens.length > 0);
+  if(planilhasComItens.length === 0){
+    showToast('Nenhum registro para exportar', true);
+    return;
+  }
+  const wb = XLSX.utils.book_new();
+  planilhasComItens.slice().sort((a,b)=> a.chave.localeCompare(b.chave)).forEach(p=>{
+    const ws = XLSX.utils.json_to_sheet(planilhaParaLinhas(p));
+    ws['!cols'] = [{wch:18},{wch:14},{wch:14},{wch:12},{wch:14},{wch:20}];
+    // Nomes de aba no Excel têm limite de 31 caracteres e não podem repetir
+    XLSX.utils.book_append_sheet(wb, ws, p.chave.slice(0,31));
+  });
+  const fileName = `catalogo_equipamentos_todas_planilhas_${chaveHoje()}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+  showToast(`Exportado: ${planilhasComItens.length} planilha(s)`);
 });
 
-render();
+renderTudo();
+
 </script>
 </body>
 </html>
