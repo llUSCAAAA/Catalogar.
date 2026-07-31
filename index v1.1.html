@@ -337,7 +337,24 @@
       <div class="grid2">
         <div class="field" id="f-td">
           <label>TD (Opcional)</label>
-          <input type="text" id="td" placeholder="Ex: TD-2210" autocomplete="off">
+          <div class="input-with-action">
+            <input type="text" id="td" placeholder="Ex: TD-2210" autocomplete="off">
+            <button type="button" class="cam-btn" id="scanTdBtn" title="Escanear Código de Barras">📷</button>
+          </div>
+
+          <input type="file" id="fallbackFileInputTd" accept="image/*" capture="environment" style="display: none;">
+
+          <div class="scanner-container" id="scannerContainerTd">
+            <div class="scanner-controls">
+              <button type="button" class="btn-close-cam" id="closeCamBtnTd">Fechar Câmera</button>
+            </div>
+            <div id="interactive-td"></div>
+          </div>
+
+          <div class="ocr-suggestions" id="ocrSuggestionsTd">
+            <p>Código de barras detectado:</p>
+            <div class="ocr-chips-wrapper" id="ocrChipsWrapperTd"></div>
+          </div>
         </div>
         <div class="field" id="f-os">
           <label>OS (Opcional)</label>
@@ -415,7 +432,6 @@
 <script>
 const STORAGE_KEY = 'catalogo_equipamentos_v1';
 let tipoSelecionado = null;
-let html5QrcodeScanner = null;
 
 const els = {
   serial: document.getElementById('serial'),
@@ -427,112 +443,149 @@ const els = {
   toast: document.getElementById('toast'),
   dateNow: document.getElementById('dateNow'),
   fileInput: document.getElementById('fileInput'),
-  importBtn: document.getElementById('importBtn'),
-  scanSerialBtn: document.getElementById('scanSerialBtn'),
-  fallbackFileInput: document.getElementById('fallbackFileInput'),
-  scannerContainer: document.getElementById('scannerContainer'),
-  closeCamBtn: document.getElementById('closeCamBtn'),
-  ocrSuggestions: document.getElementById('ocrSuggestions'),
-  ocrChipsWrapper: document.getElementById('ocrChipsWrapper')
+  importBtn: document.getElementById('importBtn')
 };
 
-// ---- TRATAMENTO DE DETECÇÃO E FILTRAGEM DO CÓDIGO ----
-function processarCodigoDetectado(decodedText) {
-  els.ocrChipsWrapper.innerHTML = '';
-  const chip = document.createElement('div');
-  chip.className = 'ocr-chip';
-  chip.innerHTML = `📊 <strong>${decodedText}</strong>`;
-  
-  chip.addEventListener('click', () => {
-    els.serial.value = decodedText;
-    showToast('✓ Código aplicado ao campo');
-    els.ocrSuggestions.classList.remove('active');
-  });
-  
-  els.ocrChipsWrapper.appendChild(chip);
-  els.ocrSuggestions.classList.add('active');
-  showToast('Código lido! Toque abaixo para aceitar.');
-}
-
-// ---- INTEGRAÇÃO DO SCANNER DE CÓDIGO DE BARRAS REALTIME / FALLBACK ----
-els.scanSerialBtn.addEventListener('click', () => {
-  els.ocrSuggestions.classList.remove('active');
-  els.ocrChipsWrapper.innerHTML = '';
-  
-  // Verifica se estamos em ambiente HTTP inseguro externo (Bloqueado por padrão para streams de vídeo)
-  const isHttpInseguro = window.location.protocol === 'http:' && 
-                         window.location.hostname !== 'localhost' && 
-                         window.location.hostname !== '127.0.0.1';
-
-  if (isHttpInseguro) {
-    // Modo HTTP Fallback: Abre a câmera nativa de fotos ou arquivos sem violar regras de segurança
-    showToast('Modo HTTP: Tire uma foto focada da etiqueta');
-    els.fallbackFileInput.click();
-    return;
-  }
-
-  // Modo HTTPS/Localhost normal: Stream de vídeo em tempo real
-  els.scannerContainer.classList.add('active');
-  
-  if (!html5QrcodeScanner) {
-    html5QrcodeScanner = new Html5Qrcode("interactive");
-  }
-  
-  const config = { 
-    fps: 15, 
-    qrbox: function(width, height) {
-      return { width: Math.floor(width * 0.85), height: Math.floor(height * 0.35) };
-    },
-    aspectRatio: 1.0
+// ---- SISTEMA DE LEITURA DE CÓDIGO DE BARRAS (REUTILIZÁVEL POR CAMPO) ----
+// Cria uma instância independente de scanner para cada campo de input que precisar
+// da função de câmera (Serial Number, TD, etc), evitando conflito entre elementos de vídeo.
+function criarLeitorDeCodigoBarras(cfg){
+  const state = {
+    scanner: null,
+    els: {
+      targetInput: document.getElementById(cfg.targetInputId),
+      scanBtn: document.getElementById(cfg.scanBtnId),
+      fallbackFileInput: document.getElementById(cfg.fallbackFileInputId),
+      scannerContainer: document.getElementById(cfg.scannerContainerId),
+      closeCamBtn: document.getElementById(cfg.closeCamBtnId),
+      ocrSuggestions: document.getElementById(cfg.ocrSuggestionsId),
+      ocrChipsWrapper: document.getElementById(cfg.ocrChipsWrapperId)
+    }
   };
 
-  html5QrcodeScanner.start(
-    { facingMode: "environment" }, 
-    config,
-    (decodedText) => {
-      stopScanner();
-      processarCodigoDetectado(decodedText);
-    },
-    (errorMessage) => {}
-  ).catch(err => {
-    console.error(err);
-    stopScanner();
-    // Se falhar mesmo assim, abre a captura de arquivo nativo como último recurso
-    showToast('Abrindo captura de imagem protegida...');
-    els.fallbackFileInput.click();
-  });
-});
+  function processarCodigoDetectado(decodedText){
+    state.els.ocrChipsWrapper.innerHTML = '';
+    const chip = document.createElement('div');
+    chip.className = 'ocr-chip';
+    chip.innerHTML = `📊 <strong>${decodedText}</strong>`;
 
-// Processamento da foto tirada no modo HTTP Fallback
-els.fallbackFileInput.addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  showToast('Analisando imagem...', false);
-  
-  const html5QrCode = new Html5Qrcode("interactive");
-  html5QrCode.scanFile(file, true)
-    .then(decodedText => {
-      processarCodigoDetectado(decodedText);
-    })
-    .catch(err => {
-      console.error(err);
-      showToast('Não foi possível ler o código nesta foto. Tente aproximar mais.', true);
+    chip.addEventListener('click', () => {
+      state.els.targetInput.value = decodedText;
+      showToast('✓ Código aplicado ao campo');
+      state.els.ocrSuggestions.classList.remove('active');
     });
-  
-  els.fallbackFileInput.value = '';
+
+    state.els.ocrChipsWrapper.appendChild(chip);
+    state.els.ocrSuggestions.classList.add('active');
+    showToast('Código lido! Toque abaixo para aceitar.');
+  }
+
+  function stopScanner(){
+    if (state.scanner && state.scanner.isScanning) {
+      state.scanner.stop().then(() => {
+        state.els.scannerContainer.classList.remove('active');
+      }).catch(err => console.error(err));
+    } else {
+      state.els.scannerContainer.classList.remove('active');
+    }
+  }
+
+  state.els.scanBtn.addEventListener('click', () => {
+    state.els.ocrSuggestions.classList.remove('active');
+    state.els.ocrChipsWrapper.innerHTML = '';
+
+    const isHttpInseguro = window.location.protocol === 'http:' &&
+                           window.location.hostname !== 'localhost' &&
+                           window.location.hostname !== '127.0.0.1';
+
+    if (isHttpInseguro) {
+      showToast('Modo HTTP: Tire uma foto focada da etiqueta');
+      state.els.fallbackFileInput.click();
+      return;
+    }
+
+    state.els.scannerContainer.classList.add('active');
+
+    if (!state.scanner) {
+      state.scanner = new Html5Qrcode(cfg.interactiveDivId);
+    }
+
+    const config = {
+      fps: 15,
+      qrbox: function(width, height) {
+        return { width: Math.floor(width * 0.85), height: Math.floor(height * 0.35) };
+      },
+      aspectRatio: 1.0
+    };
+
+    state.scanner.start(
+      { facingMode: "environment" },
+      config,
+      (decodedText) => {
+        stopScanner();
+        processarCodigoDetectado(decodedText);
+      },
+      (errorMessage) => {}
+    ).catch(err => {
+      console.error(err);
+      stopScanner();
+      showToast('Abrindo captura de imagem protegida...');
+      state.els.fallbackFileInput.click();
+    });
+  });
+
+  state.els.fallbackFileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    showToast('Analisando imagem...', false);
+
+    const html5QrCode = new Html5Qrcode(cfg.interactiveDivId);
+    html5QrCode.scanFile(file, true)
+      .then(decodedText => {
+        processarCodigoDetectado(decodedText);
+      })
+      .catch(err => {
+        console.error(err);
+        showToast('Não foi possível ler o código nesta foto. Tente aproximar mais.', true);
+      });
+
+    state.els.fallbackFileInput.value = '';
+  });
+
+  state.els.closeCamBtn.addEventListener('click', stopScanner);
+
+  return { stopScanner, resetSuggestions: () => {
+    state.els.ocrSuggestions.classList.remove('active');
+    state.els.ocrChipsWrapper.innerHTML = '';
+  }};
+}
+
+const leitorSerial = criarLeitorDeCodigoBarras({
+  targetInputId: 'serial',
+  scanBtnId: 'scanSerialBtn',
+  fallbackFileInputId: 'fallbackFileInput',
+  scannerContainerId: 'scannerContainer',
+  interactiveDivId: 'interactive',
+  closeCamBtnId: 'closeCamBtn',
+  ocrSuggestionsId: 'ocrSuggestions',
+  ocrChipsWrapperId: 'ocrChipsWrapper'
 });
 
-els.closeCamBtn.addEventListener('click', stopScanner);
+const leitorTd = criarLeitorDeCodigoBarras({
+  targetInputId: 'td',
+  scanBtnId: 'scanTdBtn',
+  fallbackFileInputId: 'fallbackFileInputTd',
+  scannerContainerId: 'scannerContainerTd',
+  interactiveDivId: 'interactive-td',
+  closeCamBtnId: 'closeCamBtnTd',
+  ocrSuggestionsId: 'ocrSuggestionsTd',
+  ocrChipsWrapperId: 'ocrChipsWrapperTd'
+});
 
-function stopScanner() {
-  if (html5QrcodeScanner && html5QrcodeScanner.isScanning) {
-    html5QrcodeScanner.stop().then(() => {
-      els.scannerContainer.classList.remove('active');
-    }).catch(err => console.error(err));
-  } else {
-    els.scannerContainer.classList.remove('active');
-  }
+function stopScanner(){
+  leitorSerial.stopScanner();
+  leitorTd.stopScanner();
 }
 // ------------------------------------------------------------
 
@@ -578,8 +631,8 @@ function resetForm(){
   els.orgao.value = '';
   tipoSelecionado = null;
   document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
-  els.ocrSuggestions.classList.remove('active');
-  els.ocrChipsWrapper.innerHTML = '';
+  leitorSerial.resetSuggestions();
+  leitorTd.resetSuggestions();
   els.serial.focus();
 }
 
